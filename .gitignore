@@ -1,0 +1,12 @@
+# Runtime data / volumes
+**/postgres/
+**/pgdata/
+**/data/
+
+# Docker state
+**/config/**/*
+!**/config/**/.gitkeep
+
+# OS junk
+.DS_Store
+
