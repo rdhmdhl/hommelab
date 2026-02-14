@@ -11,3 +11,9 @@
 .DS_Store
 
 .env
+
+# Service runtime volumes
+services/etc-pihole/
+services/pihole/
+services/immich/
+services/prowlarr/

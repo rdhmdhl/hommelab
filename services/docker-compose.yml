@@ -1,6 +1,45 @@
-version: "3.8"
-
 services:
+  pihole:
+    container_name: pihole
+    image: pihole/pihole:latest
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "8888:80/tcp"     # Pi-hole UI
+      # - "443:443/tcp"   # optional, not needed behind NPM
+    environment:
+      TZ: ${TZ}
+      FTLCONF_webserver_api_password: ${PIHOLE_WEBPASSWORD}
+      FTLCONF_dns_listeningMode: ALL
+    volumes:
+      - ./etc-pihole:/etc/pihole
+    restart: unless-stopped
+
+  nginx-proxy-manager:
+    image: jc21/nginx-proxy-manager:latest
+    container_name: nginx-proxy-manager
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "81:81"   # admin UI
+      - "443:443"
+    volumes:
+      - ./npm/data:/data
+      - ./npm/letsencrypt:/etc/letsencrypt
+
+  jellyseerr:
+    image: ghcr.io/fallenbagel/jellyseerr:latest
+    init: true
+    container_name: jellyseerr
+    ports:
+      - 5055:5055
+    environment:
+      - LOG_LEVEL=debug
+      - TZ=America/Los_Angeles
+    volumes:
+      - ./config/jellyseerr:/app/config
+    restart: unless-stopped
+
   jellyfin:
     image: jellyfin/jellyfin
     container_name: jellyfin
@@ -87,8 +126,7 @@ services:
       - TZ=America/Los_Angeles
     volumes:
       - ./config/sonarr:/config
-      - /data/media/tv:/tv
-      - /data/media/downloads:/downloads
+      - /data/media:/data
     ports:
       - 8989:8989
     restart: unless-stopped
@@ -100,10 +138,22 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=America/Los_Angeles
-       volumes:
+    volumes:
       - ./config/radarr:/config
-      - /data/media/movies:/movies
-      - /data/media/downloads:/downloads
+      - /data/media:/data
     ports:
       - 7878:7878
+    restart: unless-stopped
+
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Los_Angeles
+    volumes:
+      - ./prowlarr:/config
+    ports:
+      - 9696:9696
     restart: unless-stopped
