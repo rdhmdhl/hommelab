@@ -234,6 +234,28 @@ iperf3 -c 192.168.1.42
 
 Whatever that number is, it is your hard ceiling for both downloading and moving.
 
+### Measured, 2026-08-07
+
+| Path | Throughput |
+| --- | --- |
+| Pi local disk (`/data/media`, ntfs-3g, `dd` 2 GB) | 73 MB/s |
+| WiFi downloader → Pi (`iperf3`, 10 s) | **20 MB/s** (162 Mbit/s) |
+
+The link negotiates at 5 GHz, -56 dBm, 450/702 Mbit — which is flattering. Actual throughput
+is 20 MB/s, roughly **3.6x slower than the storage behind it**. WiFi is the bottleneck, and
+the storage layer does not need attention.
+
+The run also showed **149 retransmits** and swings from 255 down to 49 Mbit/s inside ten
+seconds. At -56 dBm that is interference, not range — there are 66 BSSes in scan range. The
+instability matters as much as the average: a steady 162 would be easier to plan around.
+
+What that means for a 20 GB release, counting only LAN traffic:
+
+```txt
+today (unpack over NFS, ~4N across the link)   ~80 GB   ≈ 66 min of network time
+with local scratch (1N, final move only)       ~20 GB   ≈ 17 min
+```
+
 ### Server-side: `async` export
 
 The Pi's export in `/etc/exports` controls how NFS writes are acknowledged:
@@ -711,9 +733,18 @@ software tuning in this document.
 This is the single highest-leverage change available. It removes the bottleneck rather than
 working around it, and it improves both the download and the move simultaneously.
 
-In rough order of preference: a real cable, then MoCA if there is coax, then powerline. Failing
-all of those, confirm the node is at least on 5 GHz rather than 2.4 GHz — that alone is often
-several times faster.
+In rough order of preference: a real cable, then MoCA if there is coax, then powerline. The node
+is already on 5 GHz at -56 dBm, so signal strength is not the problem — the 20 MB/s measured
+above is interference and contention, which a cable removes entirely and a better channel only
+partially mitigates.
+
+The downloader is an Intel Mac with no ethernet port, so this means a **USB or Thunderbolt
+ethernet adapter** (~$15, no drivers needed on Ubuntu). Cheapest meaningful upgrade available:
+it would move the ceiling from 20 MB/s to the Pi's 73 MB/s disk limit, a ~3.6x improvement on
+every byte crossing between nodes.
+
+Failing a cable, changing the 5 GHz channel in the My Spectrum app is worth a try — 66 BSSes
+in range and 149 retransmits per 10 s point at a congested channel.
 
 If this happens, most of Phase 2's urgency evaporates. Local scratch is still worth keeping
 (it is still 2N versus 5N, and NFS latency still hurts under PAR2 repair), but it stops being

@@ -1,3 +1,14 @@
+volumes:
+  # Docker mounts the share itself at container start. If the Pi is unreachable
+  # the container fails to start rather than silently writing to a local dir --
+  # this is the guardrail, not a bash check. Also means no stale bind-mount view.
+  media:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: "addr=192.168.1.42,nfsvers=4,hard,timeo=600,retrans=2"
+      device: ":/data/media"
+
 services:
   vpn:
     image: qmcgaw/gluetun
@@ -13,7 +24,6 @@ services:
     environment:
       - DOT=off
       - DNS_ADDRESS=1.1.1.1
-      - DNS_ADDRESS=8.8.8.8
     volumes:
       - ./config/gluetun:/gluetun
     restart: unless-stopped
@@ -31,5 +41,9 @@ services:
       - TZ=America/Los_Angeles
     volumes:
       - ./config/sabnzbd:/config
-      - /data/media:/data
+      # Completed downloads land here, on the Pi.
+      - media:/data
+      # Scratch: download, PAR2 repair and unpack all happen on local disk.
+      # SAB moves the finished release to /data when it is done.
+      - /home/reid/sab-downloads:/downloads
     restart: unless-stopped
