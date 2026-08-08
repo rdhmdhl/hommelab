@@ -1,0 +1,59 @@
+# Glance bookmarks — reference copy.
+#
+# The live file is services/glance/config/glance.yml on the Pi, which is
+# gitignored (`**/config/**/*`) and therefore unversioned. This is a tracked
+# copy of just the bookmarks widget so the link list survives a rebuild.
+#
+# To apply: paste the `- type: bookmarks` widget below into a column's
+# `widgets:` list in glance.yml, then `docker restart glance`.
+#
+# Addresses use the Pi's static 192.168.1.42 rather than the .40 DHCP lease,
+# and raw IPs rather than *.hommelab.local — the pretty names only resolve for
+# clients using Pi-hole as their DNS, and `.local` is intercepted by mDNS on
+# TVs and streaming boxes. See downloader/plan.md, Phase 4.
+
+- type: bookmarks
+  groups:
+    - title: Media
+      color: 200 70 50
+      links:
+        - title: Jellyfin
+          url: http://192.168.1.42:8096
+          icon: di:jellyfin
+        - title: Jellyseerr
+          url: http://192.168.1.42:5055
+          icon: di:jellyseerr
+        - title: Immich
+          url: http://192.168.1.42:2283
+          icon: di:immich
+
+    - title: Automation
+      color: 45 70 55
+      links:
+        - title: Sonarr
+          url: http://192.168.1.42:8989
+          icon: di:sonarr
+        - title: Radarr
+          url: http://192.168.1.42:7878
+          icon: di:radarr
+        - title: Prowlarr
+          url: http://192.168.1.42:9696
+          icon: di:prowlarr
+        # The only service not on the Pi — it lives behind Gluetun on the
+        # downloader node, published as 8888 -> 8080.
+        - title: SABnzbd
+          url: http://192.168.1.127:8888
+          icon: di:sabnzbd
+
+    - title: Infrastructure
+      color: 280 60 60
+      links:
+        - title: Pi-hole
+          url: http://192.168.1.42:8888/admin
+          icon: di:pi-hole
+        - title: Nginx Proxy Manager
+          url: http://192.168.1.42:81
+          icon: di:nginx-proxy-manager
+        - title: Router
+          url: http://192.168.1.1
+          icon: di:router

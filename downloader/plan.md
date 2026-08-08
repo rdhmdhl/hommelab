@@ -372,6 +372,55 @@ explicit resolver:
       - DNS_ADDRESS=1.1.1.1
 ```
 
+### Internal domain — rename off `.local`
+
+The pretty names (`sab.hommelab.local`, `jellyfin.hommelab.local`, …) work from a Mac with
+Pi-hole set manually, and fail on TVs and streaming boxes. Two separate causes, and the second
+is the one that cannot be configured around:
+
+1. **The records are ordinary DNS, served by Pi-hole.** They only resolve for clients using
+   Pi-hole as their resolver, and the Spectrum SAX1V1K still hands out `192.168.1.1`. Every
+   device needs Pi-hole set by hand.
+2. **`.local` is reserved for mDNS.** RFC 6762 claims the suffix for multicast DNS, and
+   Android/Google TV, Apple TV, and most smart-TV network stacks honor that: they intercept any
+   `.local` lookup and send it to mDNS/Bonjour instead of the configured resolver. Nothing
+   advertises `hommelab.local` over mDNS, so the query dies on the device without ever reaching
+   Pi-hole — even when Pi-hole *is* the configured DNS server.
+
+Cause 2 is why this shows up as "works on my laptop, broken on the TV". Setting DNS on the TV
+does not fix it; the suffix is the problem.
+
+**Fix:** rename the internal domain to a suffix that resolvers treat as ordinary DNS.
+`hommelab.lan` or `hommelab.home` both work — neither is reserved for mDNS, and neither is a
+real public TLD, so there is no risk of a future ICANN delegation shadowing it. Pick one and use
+it everywhere.
+
+Until then, **use the IP** on any TV or appliance client. Jellyfin publishes `8096:8096` on the
+host, so `http://192.168.1.42:8096` hits the container directly and skips both Pi-hole and NPM.
+Use `192.168.1.42` (the Pi's static address), not `192.168.1.40` (its DHCP lease).
+
+This is a Pi-side change, recorded here because `sab.hommelab.local` is the downloader's only
+name — it is the one proxy host that points off-box, across to `192.168.1.127:8888`.
+
+**Todo**
+
+- [ ] Pick the suffix — `hommelab.lan` (proposed; shortest, unambiguously private)
+- [ ] Update Pi-hole DNS records: `services/etc-pihole/pihole.toml`, `dns.hosts` array — all 8
+      names (`sonarr`, `radarr`, `prowlarr`, `jellyfin`, `jellyseerr`, `immich`, `pihole`, `sab`)
+- [ ] Update NPM proxy hosts to the new domain *(edit via the NPM admin UI on :81, not the
+      generated `services/npm/data/nginx/proxy_host/*.conf` files)*
+- [ ] Re-point NPM backends from `192.168.1.40` to `192.168.1.42` while in there — the DHCP
+      lease is not a stable backend target *(known gap, see README)*
+- [ ] Confirm `sab.hommelab.lan` still proxies across to `192.168.1.127:8888`
+- [ ] `docker restart pihole npm`, then verify from a Pi-hole client:
+      `dig +short jellyfin.hommelab.lan @192.168.1.42`
+- [ ] Verify from the TV — the real test, since this is the client the rename is for
+- [ ] Update the Jellyfin URL saved in any TV app / Jellyseerr / Sonarr-Radarr notification that
+      hardcodes the old name
+- [ ] Grep the repo for stale `hommelab.local` strings and update README's DNS section
+- [ ] *(optional, removes cause 1)* Get the router to hand out Pi-hole as DNS — the SAX1V1K has
+      no DHCP reservation UI, so this may mean running DHCP on Pi-hole instead
+
 ### IPv6 — silently caps usenet throughput
 
 **Symptom:** downloads run at a fraction of link speed with no error anywhere. Measured
@@ -724,6 +773,8 @@ docker exec jellyfin ls -lah /data/tv
 - [ ] `.nfs-ok` sentinel created on the Pi
 - [ ] Health script installed, checking `findmnt -t nfs4` + sentinel, and restarting SAB
 - [ ] Jellyfin re-pointed from `/media` to `/data` for path-contract consistency
+- [ ] Internal domain renamed off `.local` *(TVs route `.local` to mDNS; see Phase 4)*
+- [ ] NPM backends re-pointed from the DHCP lease `.40` to the static `.42`
 
 **Speed**
 
