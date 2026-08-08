@@ -372,6 +372,42 @@ explicit resolver:
       - DNS_ADDRESS=1.1.1.1
 ```
 
+### IPv6 — silently caps usenet throughput
+
+**Symptom:** downloads run at a fraction of link speed with no error anywhere. Measured
+2026-08-07: 3 MB/s against a link that carries 20.
+
+**Cause:** the ISP hands the downloader real IPv6 addresses, and `news.frugalusenet.com`
+resolves to an **IPv6-only** address from inside the container. Gluetun does not route IPv6
+through the WireGuard tunnel — deliberately, because IPv6 that bypassed the tunnel would leak
+the real address and defeat the point of the node. So each connection tries IPv6, gets no
+reply, waits out a timeout, and retries on IPv4. It succeeds every time, just slowly, and
+nothing logs an error.
+
+**Fix:** SAB → Config → Special → **`ipv6_servers` → 0**, then restart the container.
+Measured result: 3 MB/s → 10–15 MB/s, a 4–5x improvement, putting WiFi back as the constraint.
+
+Do **not** try to route IPv6 through the tunnel instead. More moving parts, no benefit for
+usenet, and misconfiguring it leaks the real IP.
+
+### Diagnosing this class of problem
+
+Three measurements isolate the layer, and they take a minute:
+
+```bash
+# 1. host, raw internet
+curl -o /dev/null -s -w 'host: %{speed_download} B/s\n' https://speed.cloudflare.com/__down?bytes=50000000
+
+# 2. through the VPN tunnel
+docker exec sabnzbd curl -o /dev/null -s -w 'vpn: %{speed_download} B/s\n' https://speed.cloudflare.com/__down?bytes=50000000
+
+# 3. what SAB reports while downloading
+```
+
+Baseline from 2026-08-07: host 21.4 MB/s, VPN 18.6 MB/s, SAB 3 MB/s. Fast host + fast tunnel +
+slow SAB means the problem is specific to usenet connections, not the network — which is what
+pointed at IPv6 rather than at the VPN endpoint.
+
 ### Protocol
 
 Check what Gluetun negotiated:
@@ -700,7 +736,8 @@ docker exec jellyfin ls -lah /data/tv
 - [x] Direct Unpack ON, post-processing pause OFF
 - [x] Local disk sized at ≥2.5x largest expected release *(LVM extended 100G → 226G)*
 - [x] Confirmed on 5 GHz, -56 dBm
-- [ ] Gluetun on WireGuard (verify; switch if on OpenVPN)
+- [x] Gluetun on WireGuard *(verified; tunnel carries 18.6 of 21.4 MB/s)*
+- [x] SAB `ipv6_servers` → 0 *(3 → 10–15 MB/s; IPv6-only DNS answer inside a v4-only tunnel)*
 - [ ] Queue-aware cleanup script + cron installed (dry-run verified first)
 - [ ] Sonarr/Radarr "Remove Completed Downloads" ON, hardlinking confirmed via link count
 - [ ] Downloader moved to ethernet via USB adapter *(highest leverage remaining: 20 → 73 MB/s)*
