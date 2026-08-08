@@ -683,26 +683,27 @@ docker exec jellyfin ls -lah /data/tv
 - [x] Gluetun DoT disabled
 - [x] Sonarr → Jellyfin notification
 - [x] Radarr → Jellyfin notification
-- [ ] SAB uses a Docker NFS volume, not a host bind mount *(fails closed; kills the stale-mount problem)*
+- [x] SAB uses a Docker NFS volume, not a host bind mount *(fails closed; kills the stale-mount problem)*
+- [x] Duplicate `DNS_ADDRESS` key removed from compose
 - [ ] `.nfs-ok` sentinel created on the Pi
 - [ ] Health script installed, checking `findmnt -t nfs4` + sentinel, and restarting SAB
 - [ ] Jellyfin re-pointed from `/media` to `/data` for path-contract consistency
-- [ ] Duplicate `DNS_ADDRESS` key removed from compose
 
 **Speed**
 
-- [ ] Baseline WiFi throughput measured with `iperf3` (this is the ceiling)
-- [ ] NFS export switched from `sync` to `async` on the Pi
-- [ ] Local scratch at `/home/reid/sab-downloads/incomplete` *(5N → 2N over WiFi)*
-- [ ] SAB temp folder → `/downloads/incomplete`, complete folder → `/data/downloads/complete`
-- [ ] SAB connections raised to provider maximum
+- [x] Baseline WiFi throughput measured with `iperf3` (20 MB/s — this is the ceiling)
+- [x] NFS export switched from `sync` to `async` on the Pi
+- [x] Local scratch at `/home/reid/sab-downloads/incomplete` *(5N → 2N over WiFi)*
+- [x] SAB temp folder → `/downloads/incomplete`, complete folder → `/data/downloads/complete`
+- [x] SAB connections set to 20 *(plenty for a 160 Mbit link)*
+- [x] Article cache raised to 1 GB
+- [x] Direct Unpack ON, post-processing pause OFF
+- [x] Local disk sized at ≥2.5x largest expected release *(LVM extended 100G → 226G)*
+- [x] Confirmed on 5 GHz, -56 dBm
 - [ ] Gluetun on WireGuard (verify; switch if on OpenVPN)
-- [ ] Article cache raised to 1–2 GB
-- [ ] Direct Unpack ON, post-processing pause OFF *(only after local scratch is live)*
-- [ ] Local disk sized at ≥2.5x largest expected release
 - [ ] Queue-aware cleanup script + cron installed (dry-run verified first)
 - [ ] Sonarr/Radarr "Remove Completed Downloads" ON, hardlinking confirmed via link count
-- [ ] Downloader moved to ethernet, or confirmed on 5 GHz *(highest leverage of all)*
+- [ ] Downloader moved to ethernet via USB adapter *(highest leverage remaining: 20 → 73 MB/s)*
 
 ---
 

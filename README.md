@@ -76,6 +76,89 @@ namespace. The 8888 collision with Pi-hole is fine only because they are on diff
 `.env` files are gitignored, as are all runtime volumes and container state — see
 `.gitignore`. Nothing in this repo should contain credentials, API keys, or VPN config.
 
+## Network
+
+| Node | Address | How |
+| --- | --- | --- |
+| Pi (`hommelab`) | `192.168.1.42` | static, **plus** a DHCP lease |
+| downloader (`downloader`) | `192.168.1.127` | DHCP over WiFi |
+| router (Spectrum SAX1V1K) | `192.168.1.1` | — |
+
+The Pi holds a static address *and* a normal DHCP lease at the same time:
+
+```bash
+sudo nmcli connection modify netplan-eth0 +ipv4.addresses 192.168.1.42/24
+```
+
+The `+` appends rather than replaces, so `ipv4.method` stays `auto`. This is deliberate — a
+pure static address would leave the Pi unreachable on any network using a different subnet,
+recoverable only with a monitor and keyboard. With both, the DHCP lease always gets you in and
+`.42` stays stable for every hardcoded reference in this repo.
+
+Config is written by NetworkManager into `/etc/netplan/90-NM-<uuid>.yaml`. Despite the netplan
+filenames, **`nmcli` is the right tool here** — NM owns those files and edits persist.
+
+### Router
+
+The Spectrum SAX1V1K exposes **no DHCP reservation UI**. `http://192.168.1.1` is a status page
+only; everything else is in the My Spectrum app, which does not offer reservations. Hence the
+host-side static address above.
+
+### WiFi
+
+The downloader has no ethernet port (it is an Intel Mac running Ubuntu Server), so it joins over
+WiFi. The SSID is **`DebugDepature`** — misspelled, missing an `r`. Its netplan config is
+`/etc/netplan/50-cloud-init.yaml`; wpa_supplicant silently matches nothing if the SSID is off by
+a character, with no error in any log.
+
+## Measured performance
+
+Baseline as of 2026-08-07:
+
+| Path | Throughput |
+| --- | --- |
+| Pi local disk (`/data/media`, ntfs-3g) | 73 MB/s |
+| WiFi downloader → Pi (`iperf3`) | 20 MB/s (162 Mbit/s) |
+
+WiFi is the bottleneck at ~3.6x slower than the storage behind it, despite negotiating 5 GHz at
+-56 dBm and 450/702 Mbit. A **USB-ethernet adapter for the downloader is the single largest
+available speed improvement.** See [downloader/plan.md](downloader/plan.md).
+
+`/data/media` is NTFS via ntfs-3g (FUSE). Slower than ext4 in principle, but not the constraint
+here, and hardlinks are confirmed working — which is what lets Sonarr/Radarr import for free.
+
+## Nice URLs
+
+Nginx Proxy Manager serves `*.hommelab.local`, with Pi-hole providing the DNS records:
+
+```
+sonarr · radarr · prowlarr · jellyfin · jellyseerr · immich · pihole · sab
+```
+
+`sab.hommelab.local` proxies across to the downloader at `192.168.1.127:8888`; the rest are on
+the Pi.
+
+**These only resolve for clients using Pi-hole as their DNS server.** The router currently hands
+out itself (`192.168.1.1`), so each device needs Pi-hole set manually until that changes:
+
+```bash
+sudo networksetup -setdnsservers Wi-Fi 192.168.1.42     # macOS; "Empty" to undo
+```
+
+Where the config lives — neither is in git, both are on the Pi:
+
+| What | Path |
+| --- | --- |
+| Pi-hole DNS records | `services/etc-pihole/pihole.toml`, `dns.hosts` array |
+| NPM proxy hosts | `services/npm/data/nginx/proxy_host/*.conf` (generated from `database.sqlite`) |
+
+Pi-hole is v6, so records live in `pihole.toml` rather than the older `custom.list`. Editing the
+toml requires `docker restart pihole` to take effect.
+
+> Known gap: NPM points at `192.168.1.40` (the Pi's DHCP lease) for its backends rather than
+> `.42` or, better, Docker container names — NPM shares a network with those containers, as the
+> `pihole` entry already demonstrates.
+
 ## Documentation
 
 - [downloader/plan.md](downloader/plan.md) — reliability and speed plan for the download
