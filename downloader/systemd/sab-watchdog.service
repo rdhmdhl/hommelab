@@ -1,0 +1,12 @@
+[Unit]
+Description=SABnzbd watchdog (recover after power loss or NFS outage)
+Documentation=file:/home/reid/hommelab/downloader/plan.md
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+# reid is in the docker group, so this needs no root.
+User=reid
+Group=docker
+ExecStart=/home/reid/hommelab/downloader/sab-watchdog.sh

@@ -179,3 +179,20 @@ docker logs --tail=50 vpn
 
 If `/data` is empty inside SABnzbd, the share is not mounted correctly — stop and fix it before
 letting downloads run. See `downloader/plan.md`.
+
+### SABnzbd down after a power loss
+
+Expected, and self-healing once `sab-watchdog.timer` is installed. SAB's `/data` is a Docker NFS
+volume mounted at container start, and on a cold boot dockerd starts before WiFi has a DHCP
+lease — so the mount fails with `network is unreachable`. That is a failed *start*, not a
+container exit, so `restart: unless-stopped` never engages and Docker never retries. Gluetun has
+no such dependency, which is why the VPN comes back alone.
+
+```bash
+# downloader
+systemctl list-timers sab-watchdog.timer
+journalctl -u sab-watchdog.service --since -1h
+~/hommelab/downloader/sab-watchdog.sh     # safe to run by hand; no-op if SAB is up
+```
+
+Full diagnosis in [downloader/plan.md](downloader/plan.md#monitoring).

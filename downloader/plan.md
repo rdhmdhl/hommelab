@@ -506,55 +506,91 @@ On import, Sonarr/Radarr tell Jellyfin to refresh directly. No more "Scan all li
 ## Monitoring
 
 With Phase 1 in place, SAB cannot write to the wrong disk. The remaining risk is that it sits
-**stopped** after an NFS blip without anyone noticing.
+**stopped** — and that risk turned out to be routine, not exotic.
 
-`/usr/local/bin/downloader-health.sh`:
+### The failure: SAB does not come back after a power loss
+
+Observed 2026-08-26, diagnosed 2026-08-29. The downloader is a laptop; when its battery ran out
+and it was plugged back in, Gluetun returned on its own and SAB did not.
+
+```txt
+Running=false  ExitCode=255  RestartCount=0  Policy=unless-stopped
+Error=error while mounting volume '/var/lib/docker/volumes/downloader_media/_data':
+      failed to mount local volume: mount :/data/media, data: addr=192.168.1.42,...:
+      network is unreachable
+```
+
+The boot timeline explains it:
+
+| Monotonic | Event |
+| --- | --- |
+| 7.46 s | `systemd-networkd-wait-online` **skipped** — `ConditionPathIsSymbolicLink` unmet |
+| 8.17 s | dockerd starts, begins restoring `unless-stopped` containers |
+| 9.27 s | WiFi associates |
+| 9.91 s | **SAB start fails — `network is unreachable`** |
+| 12.69 s | DHCP lease acquired: `192.168.1.127/24` |
+
+SAB tried to mount NFS 2.8 seconds before the machine had an IP address.
+
+Two things then compound:
+
+1. **`network-online.target` is not load-bearing here.** `wait-online` is `enabled` but gets
+   skipped, so the target is satisfied immediately and gives dockerd no real ordering.
+2. **The restart policy never engages.** The volume mount happens *before* the container process
+   exists, so this is a failed `start`, not a container exit. `RestartCount` stays at 0 and
+   Docker never tries again. `restart: unless-stopped` only covers processes that ran and died.
+
+Gluetun has no volume dependency and retries its tunnel internally, so it recovers unaided —
+hence "only the VPN comes back".
+
+This is the flip side of Phase 1's fail-closed design, and it is still the right trade: the old
+behaviour was to succeed against the wrong disk. Failing closed is correct; what was missing is
+something to *retry*.
+
+### The fix: converge, do not race
+
+Tightening boot ordering alone would not be enough. On a whole-house outage the Pi is booting
+too, so the share can be unreachable for minutes no matter what the downloader does locally. The
+watchdog retries until the share is genuinely there.
+
+`downloader/sab-watchdog.sh`, run by a systemd timer every minute:
+
+1. SAB running → exit immediately.
+2. Probe the Pi's NFS port (`/dev/tcp/192.168.1.42/2049`, 5 s timeout). Unreachable → log and
+   wait, so a down Pi costs one refused connection per tick instead of a recreated container and
+   a mount failure in the journal.
+3. Reachable → `docker compose up -d sabnzbd`.
 
 ```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-LOGFILE="/var/log/downloader-health.log"
-log() { echo "$(date -Is): $*" >> "$LOGFILE"; }
-
-# Verify the share is genuinely reachable, not merely an autofs stub.
-if ! findmnt -t nfs4 --target /data/media >/dev/null 2>&1; then
-  log "NFS not mounted at /data/media"
-  exit 0
-fi
-
-# Confirm we are looking at the Pi's disk, not an empty local directory.
-# Create this sentinel once, on the Pi: touch /data/media/.nfs-ok
-if ! timeout 10 test -f /data/media/.nfs-ok; then
-  log "/data/media reachable but sentinel missing — wrong disk or export problem"
-  exit 0
-fi
-
-# Share is healthy; make sure SAB is actually running.
-if [ "$(docker inspect -f '{{.State.Running}}' sabnzbd 2>/dev/null)" != "true" ]; then
-  log "share healthy but sabnzbd is down; starting"
-  cd /home/reid/hommelab/downloader && docker compose up -d sabnzbd
-fi
+cd ~/hommelab/downloader
+chmod +x sab-watchdog.sh
+sudo cp systemd/sab-watchdog.service systemd/sab-watchdog.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now sab-watchdog.timer
 ```
 
 ```bash
-sudo chmod +x /usr/local/bin/downloader-health.sh
-sudo crontab -e
+systemctl list-timers sab-watchdog.timer
+journalctl -u sab-watchdog.service -f
 ```
 
-```cron
-*/5 * * * * /usr/local/bin/downloader-health.sh
-```
+Three things this gets right:
 
-Two things this gets right that a naive watchdog does not:
-
-- It checks the **filesystem type and a sentinel file**, so autofs and an empty local directory
-  both fail the check.
-- It **starts SAB back up**. A stop-only watchdog leaves the node dead after a 30-second blip,
+- **`up -d`, not `docker start`.** Only `up` remounts the NFS volume fresh and honours
+  `depends_on: vpn: service_healthy`. That second point matters independently: SAB shares
+  Gluetun's netns via `network_mode: service:vpn`, and `depends_on` is a *Compose*-time
+  construct that dockerd ignores when restoring containers at boot. If SAB is restored before
+  the VPN, it fails with `cannot join network namespace` — a different error in the same
+  unrecoverable class, and the watchdog covers it too.
+- **It starts SAB back up.** A stop-only watchdog leaves the node dead after a 30-second blip,
   because `docker stop` overrides `restart: unless-stopped`.
+- **No sentinel file, no `findmnt` gate.** Both were in the earlier draft of this plan and both
+  were wrong for this job: they test the *host* fstab automount, which is independent of the
+  Docker NFS volume SAB actually uses. Phase 1 already makes the wrong-disk write impossible by
+  failing closed, so the mount attempt *is* the check.
 
-Optional: pipe `log()` to ntfy or a Discord webhook so a stuck mount pages you instead of
-sitting in a file.
+Optional: pipe the journal to ntfy or a Discord webhook so a stuck mount pages you instead of
+sitting in the log.
 
 ---
 
@@ -770,8 +806,10 @@ docker exec jellyfin ls -lah /data/tv
 - [x] Radarr → Jellyfin notification
 - [x] SAB uses a Docker NFS volume, not a host bind mount *(fails closed; kills the stale-mount problem)*
 - [x] Duplicate `DNS_ADDRESS` key removed from compose
-- [ ] `.nfs-ok` sentinel created on the Pi
-- [ ] Health script installed, checking `findmnt -t nfs4` + sentinel, and restarting SAB
+- [x] `sab-watchdog.sh` written, verified idempotent, and confirmed to recover SAB *(fixes the
+      cold-boot NFS race; `restart: unless-stopped` cannot)*
+- [x] `sab-watchdog.timer` installed and enabled *(verified 2026-08-29: `docker stop sabnzbd`
+      → recovered 18 s later, VPN health gate honoured)*
 - [ ] Jellyfin re-pointed from `/media` to `/data` for path-contract consistency
 - [ ] Internal domain renamed off `.local` *(TVs route `.local` to mDNS; see Phase 4)*
 - [ ] NPM backends re-pointed from the DHCP lease `.40` to the static `.42`

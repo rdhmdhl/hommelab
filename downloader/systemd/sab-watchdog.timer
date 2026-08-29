@@ -1,0 +1,12 @@
+[Unit]
+Description=Check every minute that SABnzbd is up
+
+[Timer]
+# Covers the cold-boot race: dockerd starts ~8s in, DHCP lands ~13s in, and the Pi
+# may still be booting for far longer than that.
+OnBootSec=30s
+OnUnitActiveSec=1min
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target
