@@ -56,7 +56,8 @@ services:
   # feed for Jellyfin. Provider credentials live only in Threadfin's ignored
   # runtime config; do not put the source URLs in this file or in .env.
   threadfin:
-    image: fyb3roptik/threadfin:latest
+    # `latest` is currently amd64-only; this release also publishes arm64 for the Pi.
+    image: fyb3roptik/threadfin:1.2.37
     container_name: threadfin
     restart: unless-stopped
     ports:
