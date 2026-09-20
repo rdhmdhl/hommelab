@@ -52,6 +52,24 @@ services:
     environment:
       - TZ=America/Los_Angeles
 
+  # Filters the very large MyBunny IPTV playlist into a manageable M3U/XMLTV
+  # feed for Jellyfin. Provider credentials live only in Threadfin's ignored
+  # runtime config; do not put the source URLs in this file or in .env.
+  threadfin:
+    image: fyb3roptik/threadfin:latest
+    container_name: threadfin
+    restart: unless-stopped
+    ports:
+      - "34400:34400"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Chicago
+    volumes:
+      - ./config/threadfin:/home/threadfin/conf
+    tmpfs:
+      - /tmp/threadfin
+
   immich-server:
     container_name: immich_server
     image: ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-release}

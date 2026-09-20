@@ -10,6 +10,9 @@
 # OS junk
 .DS_Store
 
+# Local coding-agent state and worktrees
+.claude/
+
 .env
 
 # Service runtime volumes

@@ -9,7 +9,7 @@ reverse proxying.
 Downloader node          ~~ WiFi ~~     Pi (192.168.1.42)      —— ethernet —— LAN
 ---------------                         -----------------
 Gluetun (VPN)                           Sonarr, Radarr, Prowlarr
-  └─ SABnzbd                            Jellyfin, Jellyseerr
+  └─ SABnzbd                            Jellyfin, Jellyseerr, Threadfin
                                         Immich (+ Postgres, Redis, ML)
                                         Pi-hole, Nginx Proxy Manager, Glance
                                         media drive attached directly
@@ -27,7 +27,7 @@ See [downloader/plan.md](downloader/plan.md).
 | Path | What it is | Runs on |
 | --- | --- | --- |
 | `downloader/` | Gluetun + SABnzbd | downloader node |
-| `services/` | Sonarr, Radarr, Prowlarr, Jellyfin, Jellyseerr, Immich, Pi-hole, NPM, Glance | Pi |
+| `services/` | Sonarr, Radarr, Prowlarr, Jellyfin, Jellyseerr, Threadfin, Immich, Pi-hole, NPM, Glance | Pi |
 | `immich/` | standalone Immich compose | Pi |
 
 Each directory is its own Compose project — deploy from within it:
@@ -60,6 +60,7 @@ see — it is the single most important rule in this repo.
 | Nginx Proxy Manager | 80 / 443, 81 admin | Pi |
 | Glance | 8080 | Pi |
 | Jellyfin | 8096 | Pi |
+| Threadfin | 34400 | Pi |
 | Sonarr | 8989 | Pi |
 | Radarr | 7878 | Pi |
 | Prowlarr | 9696 | Pi |
@@ -164,6 +165,47 @@ toml requires `docker restart pihole` to take effect.
 - [downloader/plan.md](downloader/plan.md) — reliability and speed plan for the download
   pipeline: NFS mount strategy, local scratch, SAB tuning, VPN/DNS, health monitoring, and the
   incident that motivated it.
+
+## MyBunny IPTV in Jellyfin
+
+[Threadfin](https://github.com/Threadfin/Threadfin) sits between MyBunny's very large playlist
+and Jellyfin. It keeps the provider credentials out of Git, filters the channel list, and gives
+Jellyfin a stable M3U playlist and XMLTV guide. This integration is for **Live TV**. MyBunny's
+Xtream VOD movies and series are not imported into the normal Jellyfin libraries.
+
+1. Start the adapter on the Pi:
+
+   ```bash
+   cd services
+   docker compose up -d threadfin
+   ```
+
+2. Open `http://192.168.1.42:34400/web/` and complete the Threadfin wizard. Use the M3U and
+   XMLTV/EPG URLs from the MyBunny activation email or account page. Those URLs normally contain
+   the subscription username and password, so never commit or paste them into a tracked file.
+3. Set Threadfin's tuner count no higher than the connection count on the MyBunny plan. Filter
+   aggressively (for example, select only the countries and sports groups actually watched),
+   then activate and map the wanted channels. Importing all 41,000+ channels will make Jellyfin
+   guide refreshes and browsing unnecessarily slow.
+4. In Jellyfin, open **Dashboard → Live TV → Tuner Devices → Add**, choose **M3U Tuner**,
+   and enter:
+
+   ```txt
+   http://threadfin:34400/m3u/threadfin.m3u
+   ```
+
+5. Under **Dashboard → Live TV → TV Guide Data Providers → Add**, choose **XMLTV** and
+   enter:
+
+   ```txt
+   http://threadfin:34400/xmltv/threadfin.xml
+   ```
+
+6. Refresh guide data in Jellyfin and test one channel. If channels load but do not play, first
+   test the same channel in Threadfin and confirm the MyBunny account has an unused connection.
+
+The `threadfin` hostname works only between containers in this Compose project. Use
+`http://192.168.1.42:34400` when opening Threadfin from a browser on the LAN.
 
 ## Health check
 
