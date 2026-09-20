@@ -63,8 +63,6 @@ services:
     ports:
       - "34400:34400"
     environment:
-      - PUID=1000
-      - PGID=1000
       - TZ=America/Chicago
     volumes:
       - ./config/threadfin:/home/threadfin/conf
